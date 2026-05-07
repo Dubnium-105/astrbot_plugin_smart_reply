@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 class SmartReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context, config)
-    @filter.on_llm_request
+    @filter.on_llm_request()
     async def on_llm_request(self, event, req):
         if not self.config.get("enable", True): return
         if not self.config.get("inline_mode", False): return
