@@ -1,0 +1,6 @@
+name: astrbot_plugin_smart_reply
+display_name: 智能主动回复
+version: 1.0.0
+author: Dubnium-105
+description: LLM 自主判断是否回复群聊消息，替代固定概率的随机回复
+repo: https://github.com/Dubnium-105/astrbot_plugin_smart_reply
