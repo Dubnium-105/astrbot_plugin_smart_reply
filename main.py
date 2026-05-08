@@ -4,23 +4,15 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api import AstrBotConfig
 logger = logging.getLogger(__name__)
 
-@register("smart_reply","Dubnium-105","LLM 自主判断是否回复群聊消息","1.3.0")
+@register("smart_reply","Dubnium-105","LLM 自主判断是否回复群聊消息","1.4.0")
 class SmartReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
 
-    @filter.on_llm_request()
-    async def on_llm_request(self, event, req):
-        if not self.config.get("enable", True): return
-        if not self.config.get("inline_mode", False): return
-        if event.get_message_type() != "GROUP_MESSAGE": return
-        if event.is_at_or_wake_command: return
-        p = self.config.get("prompt","如果不需要回复，只回复一个空格。")
-        req.system_prompt = (req.system_prompt or "") + "\n\n[系统规则] " + p
-
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
+        logger.info(f"[SmartReply] handler called, msg={event.message_str[:50] if event.message_str else 'EMPTY'}")
         if not self.config.get("enable", True): return
         if self.config.get("inline_mode", False): return
         if event.is_at_or_wake_command: return
@@ -41,9 +33,9 @@ class SmartReplyPlugin(Star):
             resp = await provider.text_chat(prompt=prompt, session_id=uuid.uuid4().hex, persist=False)
             r = resp.completion_text.strip().upper()
             if "YES" in r and "NO" not in r:
-                logger.info(f"[SmartReply] YES {group_name} {sender}: {msg_text[:30]} raw={r}")
+                logger.info(f"[SmartReply] YES {group_name} {sender}: {msg_text[:30]}")
             else:
-                logger.info(f"[SmartReply] NO  {group_name} {sender}: {msg_text[:30]} raw={r}")
+                logger.info(f"[SmartReply] NO  {group_name} {sender}: {msg_text[:30]}")
                 event.stop_event()
         except Exception as e:
             logger.error(f"[SmartReply] err: {e}")
