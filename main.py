@@ -3,11 +3,13 @@ from astrbot.api.star import Context, Star, register
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api import AstrBotConfig
 logger = logging.getLogger(__name__)
-@register("smart_reply","Dubnium-105","LLM 自主判断是否回复群聊消息","1.2.0")
+
+@register("smart_reply","Dubnium-105","LLM 自主判断是否回复群聊消息","1.3.0")
 class SmartReplyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
         self.config = config or {}
+
     @filter.on_llm_request()
     async def on_llm_request(self, event, req):
         if not self.config.get("enable", True): return
@@ -15,9 +17,8 @@ class SmartReplyPlugin(Star):
         if event.get_message_type() != "GROUP_MESSAGE": return
         if event.is_at_or_wake_command: return
         p = self.config.get("prompt","如果不需要回复，只回复一个空格。")
-        req.system_prompt = (req.system_prompt or "") + "
+        req.system_prompt = (req.system_prompt or "") + "\n\n[系统规则] " + p
 
-[系统规则] " + p
     @filter.event_message_type(filter.EventMessageType.GROUP_MESSAGE)
     async def on_group_message(self, event: AstrMessageEvent):
         if not self.config.get("enable", True): return
@@ -28,35 +29,21 @@ class SmartReplyPlugin(Star):
             g = event.get_group_id()
             if g not in wl and event.unified_msg_origin not in wl:
                 event.stop_event(); return
-        try:
-            from astrbot.builtin_stars.astrbot.long_term_memory import LongTermMemory
-            ltm = LongTermMemory(self.context)
-            chats = getattr(ltm,'session_chats',{}).get(event.unified_msg_origin,[])
-        except: return
-        if not chats: return
-        n = self.config.get("history_count", 12)
-        h = "
-".join(chats[-n:])
-        persona = ""
-        try:
-            cfg = self.context.get_config(event.unified_msg_origin)
-            persona = cfg.get("provider_settings",{}).get("prompt_prefix","").replace("{{prompt}}","")
-        except: pass
-        dp = self.config.get("prompt","你是一个群聊中的 AI 助手。请判断是否应该回复这条消息。只回复 YES 或 NO。")
-        prompt = f"系统设定:
-{persona}
-
-群聊记录:
-{h}
-
-{dp}
-只回复 YES 或 NO。"
+        msg_text = event.message_str or ""
+        sender = event.message_obj.sender.nickname if event.message_obj.sender else "unknown"
+        group_name = getattr(event.message_obj, 'group_name', '') or ''
+        dp = self.config.get("prompt","你是一个群聊中的 AI 助手。只回复 YES 或 NO。")
+        prompt = f"群聊: {group_name}\n发言人: {sender}\n消息: {msg_text}\n\n{dp}\n只回复 YES 或 NO。"
         try:
             pid = self.config.get("provider_id","")
             provider = self.context.get_provider_by_id(pid) if pid else self.context.get_using_provider(event.unified_msg_origin)
             if not provider: return
             resp = await provider.text_chat(prompt=prompt, session_id=uuid.uuid4().hex, persist=False)
             r = resp.completion_text.strip().upper()
-            if "YES" in r and "NO" not in r: logger.info("SmartReply: YES")
-            else: event.stop_event()
-        except Exception as e: logger.error(f"SmartReply error: {e}")
+            if "YES" in r and "NO" not in r:
+                logger.info(f"[SmartReply] YES {group_name} {sender}: {msg_text[:30]} raw={r}")
+            else:
+                logger.info(f"[SmartReply] NO  {group_name} {sender}: {msg_text[:30]} raw={r}")
+                event.stop_event()
+        except Exception as e:
+            logger.error(f"[SmartReply] err: {e}")
